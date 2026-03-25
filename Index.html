@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Fiffa Online - Practice Hub</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #0a0a0a; font-family: 'Segoe UI', sans-serif; user-select: none; touch-action: none; }
+        
+        /* Menus */
+        #menu-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+        #main-menu, #practice-menu, #online-menu { display: flex; flex-direction: column; align-items: center; }
+        #practice-menu, #online-menu { display: none; }
+
+        #wallet-display {
+            position: absolute; top: 20px; left: 20px;
+            background: rgba(255, 215, 0, 0.2); border: 1px solid #FFD700;
+            padding: 8px 15px; border-radius: 20px; color: #FFD700; font-weight: 900; font-size: 20px;
+        }
+
+        #menu-title {
+            font-size: clamp(40px, 10vw, 80px);
+            font-weight: 900; color: #fff; margin-bottom: 30px; font-style: italic;
+            background: linear-gradient(to bottom, #fff, #888);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .menu-btn {
+            width: 260px; padding: 18px; margin: 8px;
+            background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.4);
+            color: white; font-size: 18px; font-weight: 700; text-transform: uppercase;
+            border-radius: 12px; cursor: pointer; transition: 0.2s; text-align: center;
+        }
+        .menu-btn:active { transform: scale(0.95); background: rgba(255,255,255,0.2); }
+        .back-btn { border-color: #ff416c; color: #ff416c; margin-top: 20px; }
+        
+        input {
+            width: 240px; padding: 15px; margin-bottom: 10px; border-radius: 10px;
+            border: none; background: #222; color: white; text-align: center; font-size: 18px;
+        }
+
+        /* HUD */
+        #ui { position: absolute; top: 20px; width: 100%; text-align: center; color: white; font-weight: 800; pointer-events: none; z-index: 10; display: none; }
+        #scoreboard { font-size: 24px; margin-bottom: 5px; }
+        #timer { font-size: 18px; color: #FFD700; background: rgba(0,0,0,0.4); padding: 2px 10px; border-radius: 4px; display: inline-block; }
+        #status-msg { position: absolute; top: 80px; width: 100%; text-align: center; color: #00ff00; font-size: 14px; }
+        
+        /* Joysticks & Buttons */
+        #joystick-container { position: absolute; bottom: 30px; left: 30px; width: 80px; height: 80px; background: rgba(255,255,255,0.05); border-radius: 50%; border: 2px solid rgba(255,255,255,0.3); z-index: 20; display: none; }
+        #knob { position: absolute; top: 20px; left: 20px; width: 40px; height: 40px; background: #fff; border-radius: 50%; }
+        #controls { position: absolute; bottom: 30px; right: 30px; display: none; flex-direction: row; gap: 15px; align-items: flex-end; z-index: 20; }
+        .btn { width: 75px; height: 75px; border: 3px solid #fff; border-radius: 50%; color: white; font-weight: 900; font-size: 13px; display: flex; align-items: center; justify-content: center; }
+        #shoot-btn { background: linear-gradient(135deg, #ff416c, #ff4b2b); width: 85px; height: 85px; }
+        #exit-btn { position: absolute; top: 20px; right: 20px; padding: 10px 20px; background: rgba(0,0,0,0.5); color: white; border: 1px solid white; border-radius: 5px; display: none; z-index: 30; }
+    </style>
+</head>
+<body>
+    <div id="menu-overlay">
+        <div id="wallet-display">€<span id="balance">0</span></div>
+        <div id="menu-title">FIFFA ONLINE</div>
+        
+        <div id="main-menu">
+            <div class="menu-btn" id="go-online-btn" style="background: #4776E6;">Play Online (Code)</div>
+            <div class="menu-btn" id="go-practice-btn">Practice Mode</div>
+        </div>
+
+        <div id="online-menu">
+            <input type="text" id="room-input" placeholder="Enter Room Code...">
+            <div class="menu-btn" id="join-room-btn">Join Match</div>
+            <div class="menu-btn back-btn" id="back-from-online">Back</div>
+        </div>
+
+        <div id="practice-menu">
+            <div class="menu-btn" id="free-play-btn">Free Play</div>
+            <div class="menu-btn back-btn" id="back-to-main">Back</div>
+        </div>
+    </div>
+
+    <div id="ui">
+        <div id="scoreboard">P1 <span id="p1">0</span> — <span id="p2">0</span> P2</div>
+        <div id="status-msg"></div>
+    </div>
+    <div id="exit-btn">QUIT</div>
+    <div id="joystick-container"><div id="knob"></div></div>
+    <div id="controls">
+        <div id="shoot-btn" class="btn">SHOOT</div>
+    </div>
+
+    <script type="importmap">{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }</script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getDatabase, ref, set, onValue, update, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+        // --- FIREBASE CONFIG ---
+        // REPLACE THIS WITH YOUR OWN CONFIG FROM FIREBASE CONSOLE
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            databaseURL: "https://your-project-id.firebaseio.com",
+            projectId: "your-project-id",
+        };
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        // --- GAME VARIABLES ---
+        let gameMode = 'menu';
+        let myRole = null; // 'p1' or 'p2'
+        let roomPath = null;
+        let money = parseInt(localStorage.getItem('fiffa_money')) || 0;
+        let moveDir = { x: 0, z: 0 }, ballVel = { x: 0, z: 0 };
+        const LIMIT_X = 14.2, LIMIT_Z = 24.2;
+
+        // --- THREE.JS SETUP ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1a1a1a);
+        const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.2));
+        const pitch = new THREE.Mesh(new THREE.PlaneGeometry(30, 50), new THREE.MeshPhongMaterial({ color: 0x2e7d32 }));
+        pitch.rotation.x = -Math.PI / 2; scene.add(pitch);
+
+        function createChibi(color) {
+            const group = new THREE.Group();
+            const head = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.1, 1.1), new THREE.MeshPhongMaterial({color: 0xffdbac}));
+            head.position.y = 2.1;
+            const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.55, 0.9), new THREE.MeshPhongMaterial({color: color}));
+            body.position.y = 1.1;
+            group.add(head, body); return group;
+        }
+
+        const player = createChibi(0x75aadb); scene.add(player);
+        const opponent = createChibi(0xf44336); scene.add(opponent);
+        const ball = new THREE.Mesh(new THREE.SphereGeometry(0.5, 32, 32), new THREE.MeshPhongMaterial({color: 0xffffff}));
+        ball.position.y = 0.5; scene.add(ball);
+
+        // --- MULTIPLAYER LOGIC ---
+        const joinRoom = (roomId) => {
+            roomPath = 'rooms/' + roomId;
+            const roomRef = ref(db, roomPath);
+
+            onValue(roomRef, (snapshot) => {
+                const data = snapshot.val();
+                if (!data) {
+                    // Create room as Player 1
+                    myRole = 'p1';
+                    set(roomRef, { 
+                        p1: { x: 0, z: 15 }, 
+                        p2: { x: 0, z: -15 }, 
+                        ball: { x: 0, z: 0 },
+                        scores: { p1: 0, p2: 0 }
+                    });
+                    document.getElementById('status-msg').innerText = "WAITING FOR P2...";
+                } else if (!myRole) {
+                    // Join room as Player 2
+                    myRole = 'p2';
+                    document.getElementById('status-msg').innerText = "CONNECTED AS P2";
+                }
+
+                // Sync others to your screen
+                if (data) {
+                    if (myRole === 'p1') {
+                        opponent.position.set(data.p2.x, 0, data.p2.z);
+                    } else {
+                        opponent.position.set(data.p1.x, 0, data.p1.z);
+                        // P2 takes ball position from P1 (Host)
+                        ball.position.set(data.ball.x, 0.5, data.ball.z);
+                        document.getElementById('status-msg').innerText = "MATCH IN PROGRESS";
+                    }
+                    document.getElementById('p1').innerText = data.scores.p1;
+                    document.getElementById('p2').innerText = data.scores.p2;
+                }
+            });
+
+            onDisconnect(ref(db, roomPath + '/' + myRole)).remove();
+            startMatch('online');
+        };
+
+        // --- UI HANDLERS ---
+        document.getElementById('go-online-btn').onclick = () => {
+            document.getElementById('main-menu').style.display = 'none';
+            document.getElementById('online-menu').style.display = 'flex';
+        };
+
+        document.getElementById('join-room-btn').onclick = () => {
+            const code = document.getElementById('room-input').value;
+            if(code) joinRoom(code);
+        };
+
+        const startMatch = (mode) => {
+            gameMode = mode;
+            document.getElementById('menu-overlay').style.display = 'none';
+            document.getElementById('joystick-container').style.display = 'block';
+            document.getElementById('controls').style.display = 'flex';
+            document.getElementById('exit-btn').style.display = 'block';
+            document.getElementById('ui').style.display = 'block';
+            player.position.set(0, 0, myRole === 'p1' ? 15 : -15);
+        };
+
+        // --- CONTROLS ---
+        document.addEventListener('touchstart', handleTouch, {passive: false});
+        document.addEventListener('touchmove', handleTouch, {passive: false});
+        document.addEventListener('touchend', () => { moveDir = {x:0, z:0}; document.getElementById('knob').style.transform = 'translate(0,0)'; });
+
+        function handleTouch(e) {
+            const rect = document.getElementById('joystick-container').getBoundingClientRect();
+            for(let t of e.touches) {
+                if (t.clientX < window.innerWidth/2) {
+                    const dx = t.clientX - (rect.left + rect.width/2);
+                    const dy = t.clientY - (rect.top + rect.height/2);
+                    const dist = Math.min(Math.sqrt(dx*dx + dy*dy), 40);
+                    moveDir.x = (dx / 40); moveDir.z = (dy / 40);
+                    document.getElementById('knob').style.transform = `translate(${moveDir.x * 40}px, ${moveDir.z * 40}px)`;
+                }
+            }
+        }
+
+        document.getElementById('shoot-btn').onclick = () => {
+            if (player.position.distanceTo(ball.position) < 2.5) {
+                const dx = ball.position.x - player.position.x;
+                const dz = ball.position.z - player.position.z;
+                ballVel.x = (dx) * 0.5; ballVel.z = (dz) * 0.5;
+            }
+        };
+
+        // --- MAIN LOOP ---
+        function animate() {
+            requestAnimationFrame(animate);
+            if(gameMode === 'menu') return;
+
+            // Move Player
+            player.position.x += moveDir.x * 0.2;
+            player.position.z += moveDir.z * 0.2;
+
+            // Physics (Calculated locally, but P1 is the master of the ball)
+            if (myRole === 'p1') {
+                ball.position.x += ballVel.x; ball.position.z += ballVel.z;
+                ballVel.x *= 0.95; ballVel.z *= 0.95;
+
+                // Simple collision
+                if (player.position.distanceTo(ball.position) < 1.2) {
+                    ballVel.x = (ball.position.x - player.position.x) * 0.2;
+                    ballVel.z = (ball.position.z - player.position.z) * 0.2;
+                }
+                if (opponent.position.distanceTo(ball.position) < 1.2) {
+                    ballVel.x = (ball.position.x - opponent.position.x) * 0.2;
+                    ballVel.z = (ball.position.z - opponent.position.z) * 0.2;
+                }
+            }
+
+            // Sync to Database
+            if (roomPath && myRole) {
+                const updates = {};
+                updates[myRole] = { x: player.position.x, z: player.position.z };
+                if (myRole === 'p1') {
+                    updates['ball'] = { x: ball.position.x, z: ball.position.z };
+                }
+                update(ref(db, roomPath), updates);
+            }
+
+            camera.position.lerp(new THREE.Vector3(player.position.x, 15, player.position.z + 20), 0.1);
+            camera.lookAt(player.position);
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>
